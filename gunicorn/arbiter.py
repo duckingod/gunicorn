@@ -42,7 +42,7 @@ class Arbiter(object):
     # I love dynamic languages
     SIG_QUEUE = []
     SIGNALS = [getattr(signal, "SIG%s" % x)
-               for x in "HUP QUIT INT TERM TTIN TTOU USR1 USR2 WINCH".split()]
+               for x in "CHLD HUP QUIT INT TERM TTIN TTOU USR1 USR2 WINCH".split()]
     SIG_NAMES = dict(
         (getattr(signal, name), name[3:].lower()) for name in dir(signal)
         if name[:3] == "SIG" and name[3] != "_"
@@ -186,7 +186,6 @@ class Arbiter(object):
         # initialize all signals
         for s in self.SIGNALS:
             signal.signal(s, self.signal)
-        signal.signal(signal.SIGCHLD, self.handle_chld)
 
     def signal(self, sig, frame):
         if len(self.SIG_QUEUE) < 5:
@@ -237,10 +236,9 @@ class Arbiter(object):
                 self.pidfile.unlink()
             sys.exit(-1)
 
-    def handle_chld(self, sig, frame):
+    def handle_chld(self):
         "SIGCHLD handling"
         self.reap_workers()
-        self.wakeup()
 
     def handle_hup(self):
         """\
@@ -388,9 +386,11 @@ class Arbiter(object):
         limit = time.time() + self.cfg.graceful_timeout
         # instruct the workers to exit
         self.kill_workers(sig)
+        self.reap_workers()
         # wait until the graceful timeout
         while self.WORKERS and time.time() < limit:
             time.sleep(0.1)
+            self.reap_workers()
 
         self.kill_workers(signal.SIGKILL)
 
